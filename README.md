@@ -1,3 +1,7 @@
+<p style="width: 100%; background: lightyellow; border: 1px solid black; color: black; padding: 8px; text-align: center;">
+This fork modifies some calls from the original library and adds fundamental functionalities for the use of coroutines. The original repository can be accessed at <a href="https://github.com/WeaverDev/More-Effective-Godot-Coroutines">https://github.com/WeaverDev/More-Effective-Godot-Coroutines</a>.
+</p>
+
 
 <h1 align="center"> More Effective Godot Coroutines (C#) </h1> <br>
 <p align="center">
@@ -31,23 +35,43 @@ MEC has the following functions to yield on.
 - `Timing.WaitForSeconds(seconds)` - Yields for the given number of seconds
 - `Timing.WaitUntilDone(anotherCoroutineHandle)` - Yields until the passed coroutine has ended
 ```cs
-IEnumerator<double> MyCoroutine()
+IEnumerator<double> AnotherCoroutine()
+{
+    yield return Timing.WaitForSeconds(1.0);
+}
+
+IEnumerator<double> MyCoroutine(Node node)
 {
     yield return Timing.WaitForOneFrame;
     GD.Print("One frame has passed");
+
     yield return Timing.WaitForSeconds(2.0);
     GD.Print("Two seconds have passed");
-    yield return Timing.WaitUntilDone(Timing.RunCoroutine(DoSomethingElse());
+
+    yield return Timing.WaitUntilDone(node, AnotherCoroutine());
     GD.Print("Finished doing something else");
+
+    yield return Timing.WaitUntilDone(node, sound.AsCoroutine(), anim.AsCoroutine());
+    GD.Print("Finished playing sound and anim");
+
+    yield return Timing.WaitUntilAnyDone(node, sound.AsCoroutine(), anim.AsCoroutine());
+    GD.Print("Finished playing sound or anim");
+
+    yield return Timing.WaitWhile(node, () => myVar1);
+    GD.Print("myVar1 == true");
+
+    yield return Timing.WaitUntil(node, () => myVar2);
+    GD.Print("myVar2 == false");
 }
 ```
 
-### CancelWith
+### RunCoroutine
+```cs
+Timing.RunCoroutine(null, MyCoroutine(null));
+```
 Because coroutines do not by default live on the node that started them, they will keep going after the node is freed. By using CancelWith, coroutines can be automatically cancelled when an object they depend on is lost.
 ```cs
-Timing.RunCoroutine(MyCoroutine().CancelWith(myNode));
-// Overloads with up to three objects are provided
-Timing.RunCoroutine(MyCoroutine().CancelWith(myNode1, myNode2, myNode3));
+Timing.RunCoroutine(myNode, MyCoroutine(myNode));
 ```
 
 ### Update Segments
@@ -57,14 +81,14 @@ When starting a coroutine, you can specify the time segment in which it runs.
 - `DeferredProcess` - Updates at the end of the current frame
 
 ```cs
-Timing.RunCoroutine(MyCoroutine(), Segment.PhysicsProcess);
+Timing.RunCoroutine(myNode, MyCoroutine(), Segment.PhysicsProcess);
 ```
 
 ### Tags
 Coroutines may be grouped by a string tag for easy global management.
 ```cs
-Timing.RunCoroutine(MyCoroutine(), "myTag");
-Timing.RunCoroutine(MyOtherCoroutine(), "myTag");
+Timing.RunCoroutine(myNode, MyCoroutine(), "myTag");
+Timing.RunCoroutine(myNode, MyOtherCoroutine(), "myTag");
 // Kill both coroutines above
 Timing.KillCoroutines("myTag");
 ```

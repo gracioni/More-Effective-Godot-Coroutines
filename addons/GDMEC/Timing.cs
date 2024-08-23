@@ -1,11 +1,12 @@
 ﻿using Godot;
+using MEC;
 using System;
 using System.Collections.Generic;
 using static MEC.Timing;
 
 // /////////////////////////////////////////////////////////////////////////////////////////
 //
-// Ported from More Effective Coroutines (Free) v3.10.2 by WeaverDev
+// Ported from More Effective Coroutines (Free) v3.10.2 by WeaverDev (forked by gracioni)
 // https://assetstore.unity.com/packages/tools/animation/more-effective-coroutines-free-54975
 // Published with permission under the MIT license
 //
@@ -17,7 +18,7 @@ using static MEC.Timing;
 
 namespace MEC
 {
-    public partial class Timing : Node
+    public partial class Timing : GDAutoLoad<Timing>
     {
         /// <summary>
         /// The number of coroutines that are being run in the Process segment.
@@ -59,10 +60,7 @@ namespace MEC
         /// You can use "yield return Timing.WaitForOneFrame;" inside a coroutine function to go to the next frame. 
         /// </summary>
         public const double WaitForOneFrame = double.NegativeInfinity;
-        /// <summary>
-        /// The main thread that (almost) everything in godot runs in.
-        /// </summary>
-        public static System.Threading.Thread MainThread { get; private set; }
+  
         /// <summary>
         /// The handle of the current coroutine that is running.
         /// </summary>
@@ -111,56 +109,27 @@ namespace MEC
         private const int InitialBufferSizeSmall = 8;
 
         private static Timing[] ActiveInstances = new Timing[16];
-        private static Timing _instance;
 
+        readonly StringName _DeferredProcessName = nameof(_DeferredProcess);
+        
         public Timing()
         {
+            ProcessMode = ProcessModeEnum.Always;
             InitializeInstanceID();
-        }
-
-        public static Timing Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    // Check if we were loaded via Autoload
-                    _instance = ((SceneTree)Engine.GetMainLoop()).Root.GetNodeOrNull<Timing>(typeof(Timing).Name);
-                    if (_instance == null)
-                    {
-                        // Instantiate to root at runtime
-                        _instance = new Timing();
-                        _instance.Name = typeof(Timing).Name;
-                        _instance.CallDeferred(nameof(InitGlobalInstance));
-                    }
-                }
-                return _instance;
-            }
-        }
-
-        private void InitGlobalInstance()
-        {
-            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(this);
-        }
+        }       
 
         public override void _Ready()
         {
             // We process before other nodes by default
             ProcessPriority = -1;
 
-            // Godot 4.1 only, 4.0 does not implement this.
-            // Use reflection to try and set it for compatibility.
-            //ProcessPhysicsPriority = -1;
-            try
-            {
-                GetType().GetProperty("ProcessPhysicsPriority",
-                    System.Reflection.BindingFlags.Instance |
-                    System.Reflection.BindingFlags.Public).SetValue(this, -1);
-            }
-            catch (NullReferenceException) { }
-
-            if (MainThread == null)
-                MainThread = System.Threading.Thread.CurrentThread;
+            ProcessPhysicsPriority = -1;
+           
+            /*           
+            GetType().GetProperty("ProcessPhysicsPriority",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.Public).SetValue(this, -1);
+            */           
         }
 
         public override void _ExitTree()
@@ -239,9 +208,9 @@ namespace MEC
                 _framesSinceProcess = 0;
 
                 RemoveUnused();
-            }
+            }            
 
-            CallDeferred(nameof(_DeferredProcess));
+            CallDeferred(_DeferredProcessName);
         }
 
         public override void _PhysicsProcess(double delta)
@@ -483,10 +452,10 @@ namespace MEC
         /// </summary>
         /// <param name="coroutine">The new coroutine's handle.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(IEnumerator<double> coroutine)
+        public static CoroutineHandle RunCoroutine(Node bindNode, IEnumerator<double> coroutine)
         {
             return coroutine == null ? new CoroutineHandle()
-                : Instance.RunCoroutineInternal(coroutine, Segment.Process, null, new CoroutineHandle(Instance._instanceID), true);
+                : Instance.RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, Segment.Process, null, new CoroutineHandle(Instance._instanceID), true);
         }
 
         /// <summary>
@@ -495,10 +464,10 @@ namespace MEC
         /// <param name="coroutine">The new coroutine's handle.</param>
         /// <param name="tag">An optional tag to attach to the coroutine which can later be used for Kill operations.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(IEnumerator<double> coroutine, string tag)
+        public static CoroutineHandle RunCoroutine(Node bindNode, IEnumerator<double> coroutine, string tag)
         {
             return coroutine == null ? new CoroutineHandle()
-                : Instance.RunCoroutineInternal(coroutine, Segment.Process, tag, new CoroutineHandle(Instance._instanceID), true);
+                : Instance.RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, Segment.Process, tag, new CoroutineHandle(Instance._instanceID), true);
         }
 
         /// <summary>
@@ -507,10 +476,10 @@ namespace MEC
         /// <param name="coroutine">The new coroutine's handle.</param>
         /// <param name="segment">The segment that the coroutine should run in.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(IEnumerator<double> coroutine, Segment segment)
+        public static CoroutineHandle RunCoroutine(Node bindNode, IEnumerator<double> coroutine, Segment segment)
         {
             return coroutine == null ? new CoroutineHandle()
-                : Instance.RunCoroutineInternal(coroutine, segment, null, new CoroutineHandle(Instance._instanceID), true);
+                : Instance.RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, segment, null, new CoroutineHandle(Instance._instanceID), true);
         }
 
         /// <summary>
@@ -520,10 +489,10 @@ namespace MEC
         /// <param name="segment">The segment that the coroutine should run in.</param>
         /// <param name="tag">An optional tag to attach to the coroutine which can later be used for Kill operations.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(IEnumerator<double> coroutine, Segment segment, string tag)
+        public static CoroutineHandle RunCoroutine(Node bindNode, IEnumerator<double> coroutine, Segment segment, string tag)
         {
             return coroutine == null ? new CoroutineHandle()
-                : Instance.RunCoroutineInternal(coroutine, segment, tag, new CoroutineHandle(Instance._instanceID), true);
+                : Instance.RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, segment, tag, new CoroutineHandle(Instance._instanceID), true);
         }
 
         /// <summary>
@@ -531,10 +500,10 @@ namespace MEC
         /// </summary>
         /// <param name="coroutine">The new coroutine's handle.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public CoroutineHandle RunCoroutineOnInstance(IEnumerator<double> coroutine)
+        public CoroutineHandle RunCoroutineOnInstance(Node bindNode, IEnumerator<double> coroutine)
         {
             return coroutine == null ? new CoroutineHandle()
-                 : RunCoroutineInternal(coroutine, Segment.Process, null, new CoroutineHandle(_instanceID), true);
+                 : RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, Segment.Process, null, new CoroutineHandle(_instanceID), true);
         }
 
         /// <summary>
@@ -543,10 +512,10 @@ namespace MEC
         /// <param name="coroutine">The new coroutine's handle.</param>
         /// <param name="tag">An optional tag to attach to the coroutine which can later be used for Kill operations.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public CoroutineHandle RunCoroutineOnInstance(IEnumerator<double> coroutine, string tag)
+        public CoroutineHandle RunCoroutineOnInstance(Node bindNode, IEnumerator<double> coroutine, string tag)
         {
             return coroutine == null ? new CoroutineHandle()
-                 : RunCoroutineInternal(coroutine, Segment.Process, tag, new CoroutineHandle(_instanceID), true);
+                 : RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, Segment.Process, tag, new CoroutineHandle(_instanceID), true);
         }
 
         /// <summary>
@@ -555,10 +524,10 @@ namespace MEC
         /// <param name="coroutine">The new coroutine's handle.</param>
         /// <param name="segment">The segment that the coroutine should run in.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public CoroutineHandle RunCoroutineOnInstance(IEnumerator<double> coroutine, Segment segment)
+        public CoroutineHandle RunCoroutineOnInstance(Node bindNode, IEnumerator<double> coroutine, Segment segment)
         {
             return coroutine == null ? new CoroutineHandle()
-                 : RunCoroutineInternal(coroutine, segment, null, new CoroutineHandle(_instanceID), true);
+                 : RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, segment, null, new CoroutineHandle(_instanceID), true);
         }
 
         /// <summary>
@@ -568,10 +537,10 @@ namespace MEC
         /// <param name="segment">The segment that the coroutine should run in.</param>
         /// <param name="tag">An optional tag to attach to the coroutine which can later be used for Kill operations.</param>
         /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public CoroutineHandle RunCoroutineOnInstance(IEnumerator<double> coroutine, Segment segment, string tag)
+        public CoroutineHandle RunCoroutineOnInstance(Node bindNode, IEnumerator<double> coroutine, Segment segment, string tag)
         {
             return coroutine == null ? new CoroutineHandle()
-                 : RunCoroutineInternal(coroutine, segment, tag, new CoroutineHandle(_instanceID), true);
+                 : RunCoroutineInternal(bindNode != null ? coroutine.BindNode(bindNode) : coroutine, segment, tag, new CoroutineHandle(_instanceID), true);
         }
 
 
@@ -773,7 +742,7 @@ namespace MEC
 
             localTime = currentLocalTime;
             deltaTime = currentDeltaTime;
-            currentCoroutine = cachedHandle;
+            currentCoroutine = cachedHandle;          
 
             return handle;
         }
@@ -787,7 +756,7 @@ namespace MEC
         /// <returns>The number of coroutines that were killed.</returns>
         public static int KillCoroutines()
         {
-            return _instance == null ? 0 : _instance.KillCoroutinesOnInstance();
+            return Instance == null ? 0 : Instance.KillCoroutinesOnInstance();
         }
 
         /// <summary>
@@ -830,14 +799,14 @@ namespace MEC
         }
 
         /// <summary>
-        /// Kills the instances of the coroutine handle if it exists.
+        /// Kills the instance of the coroutine handle if it exists.
         /// </summary>
         /// <param name="handle">The handle of the coroutine to kill.</param>
         /// <returns>The number of coroutines that were found and killed (0 or 1).</returns>
-        public static int KillCoroutines(CoroutineHandle handle)
+        public static int KillCoroutine(CoroutineHandle handle)
         {
             return ActiveInstances[handle.Key] != null ? GetInstance(handle.Key).KillCoroutinesOnInstance(handle) : 0;
-        }
+        }        
 
         /// <summary>
         /// Kills the instance of the coroutine handle on this Timing instance if it exists.
@@ -867,7 +836,7 @@ namespace MEC
         /// <returns>The number of coroutines that were found and killed.</returns>
         public static int KillCoroutines(string tag)
         {
-            return _instance == null ? 0 : _instance.KillCoroutinesOnInstance(tag);
+            return Instance == null ? 0 : Instance.KillCoroutinesOnInstance(tag);
         }
 
         /// <summary> 
@@ -911,7 +880,7 @@ namespace MEC
         /// <returns>The number of coroutines that were paused.</returns>
         public static int PauseCoroutines()
         {
-            return _instance == null ? 0 : _instance.PauseCoroutinesOnInstance();
+            return Instance == null ? 0 : Instance.PauseCoroutinesOnInstance();
         }
 
         /// <summary>
@@ -991,7 +960,7 @@ namespace MEC
         /// <returns>The number of coroutines that were paused.</returns>
         public static int PauseCoroutines(string tag)
         {
-            return _instance == null ? 0 : _instance.PauseCoroutinesOnInstance(tag);
+            return Instance == null ? 0 : Instance.PauseCoroutinesOnInstance(tag);
         }
 
         /// <summary>
@@ -1021,7 +990,7 @@ namespace MEC
         /// <returns>The number of coroutines that were resumed.</returns>
         public static int ResumeCoroutines()
         {
-            return _instance == null ? 0 : _instance.ResumeCoroutinesOnInstance();
+            return Instance == null ? 0 : Instance.ResumeCoroutinesOnInstance();
         }
 
         /// <summary>
@@ -1091,7 +1060,7 @@ namespace MEC
         /// <returns>The number of coroutines that were resumed.</returns>
         public static int ResumeCoroutines(string tag)
         {
-            return _instance == null ? 0 : _instance.ResumeCoroutinesOnInstance(tag);
+            return Instance == null ? 0 : Instance.ResumeCoroutinesOnInstance(tag);
         }
 
         /// <summary>
@@ -1667,7 +1636,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallDeferred(System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._DelayedCall(0, action, null), Segment.DeferredProcess);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._DelayedCall(null, 0, action), Segment.DeferredProcess);
         }
 
         /// <summary>
@@ -1677,7 +1646,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallDeferredOnInstance(System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(_DelayedCall(0, action, null), Segment.DeferredProcess);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, _DelayedCall(null, 0, action), Segment.DeferredProcess);
         }
 
         /// <summary>
@@ -1688,7 +1657,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallDelayed(double delay, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._DelayedCall(delay, action, null));
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._DelayedCall(null, delay, action));
         }
 
         /// <summary>
@@ -1699,7 +1668,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallDelayedOnInstance(double delay, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_DelayedCall(delay, action, null));
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(null, _DelayedCall(null, delay, action));
         }
 
         /// <summary>
@@ -1707,11 +1676,11 @@ namespace MEC
         /// </summary>
         /// <param name="delay">The number of seconds to wait before calling the action.</param>
         /// <param name="action">The action to call.</param>
-        /// <param name="cancelWith">A Node that will be checked to make sure it hasn't been destroyed before calling the action.</param>
+        /// <param name="bindNode">A Node that will be checked to make sure it hasn't been destroyed before calling the action.</param>
         /// <returns>The handle to the coroutine that is started by this function.</returns>
-        public static CoroutineHandle CallDelayed(double delay, System.Action action, Node cancelWith)
+        public static CoroutineHandle CallDelayed(Node bindNode, double delay, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._DelayedCall(delay, action, cancelWith));
+            return action == null ? new CoroutineHandle() : RunCoroutine(bindNode, Instance._DelayedCall(bindNode, delay, action));
         }
 
         /// <summary>
@@ -1719,11 +1688,11 @@ namespace MEC
         /// </summary>
         /// <param name="delay">The number of seconds to wait before calling the action.</param>
         /// <param name="action">The action to call.</param>
-        /// <param name="cancelWith">A Node that will be checked to make sure it hasn't been destroyed before calling the action.</param>
+        /// <param name="bindNode">A Node that will be checked to make sure it hasn't been destroyed before calling the action.</param>
         /// <returns>The handle to the coroutine that is started by this function.</returns>
-        public CoroutineHandle CallDelayedOnInstance(double delay, System.Action action, Node cancelWith)
+        public CoroutineHandle CallDelayedOnInstance(Node bindNode, double delay, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_DelayedCall(delay, action, cancelWith));
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(bindNode, _DelayedCall(bindNode, delay, action));
         }
 
         /// <summary>
@@ -1735,7 +1704,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallDelayed(double delay, Segment segment, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._DelayedCall(delay, action, null), segment);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._DelayedCall(null, delay, action), segment);
         }
 
         /// <summary>
@@ -1747,7 +1716,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallDelayedOnInstance(double delay, Segment segment, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_DelayedCall(delay, action, null), segment);
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(null, _DelayedCall(null, delay, action), segment);
         }
 
         /// <summary>
@@ -1755,13 +1724,13 @@ namespace MEC
         /// </summary>
         /// <param name="delay">The number of seconds to wait before calling the action.</param>
         /// <param name="action">The action to call.</param>
-        /// <param name="node">A Node that will be checked to make sure it hasn't been destroyed 
+        /// <param name="bindNode">A Node that will be checked to make sure it hasn't been destroyed 
         /// before calling the action.</param>
         /// <param name="segment">The timing segment that the call should be made in.</param>
         /// <returns>The handle to the coroutine that is started by this function.</returns>
-        public static CoroutineHandle CallDelayed(double delay, Segment segment, System.Action action, Node node)
+        public static CoroutineHandle CallDelayed(Node bindNode, double delay, Segment segment, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._DelayedCall(delay, action, node), segment);
+            return action == null ? new CoroutineHandle() : RunCoroutine(bindNode, Instance._DelayedCall(bindNode, delay, action), segment);
         }
 
         /// <summary>
@@ -1773,16 +1742,16 @@ namespace MEC
         /// before calling the action.</param>
         /// <param name="segment">The timing segment that the call should be made in.</param>
         /// <returns>The handle to the coroutine that is started by this function.</returns>
-        public CoroutineHandle CallDelayedOnInstance(double delay, Segment segment, System.Action action, Node node)
+        public CoroutineHandle CallDelayedOnInstance(Node bindNode, double delay, Segment segment, System.Action action)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_DelayedCall(delay, action, node), segment);
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(bindNode, _DelayedCall(bindNode, delay, action), segment);
         }
 
-        private IEnumerator<double> _DelayedCall(double delay, System.Action action, Node cancelWith)
+        private IEnumerator<double> _DelayedCall(Node bindNode, double delay, System.Action action)
         {
             yield return WaitForSecondsOnInstance(delay);
 
-            if (cancelWith == null || IsNodeAlive(cancelWith))
+            if (bindNode == null || IsNodeAlive(bindNode))
                 action();
         }
 
@@ -1796,7 +1765,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallPeriodically(double timeframe, double period, System.Action action, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._CallContinuously(timeframe, period, action, onDone), Segment.Process);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._CallContinuously(timeframe, period, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1809,7 +1778,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallPeriodicallyOnInstance(double timeframe, double period, System.Action action, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_CallContinuously(timeframe, period, action, onDone), Segment.Process);
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(null, _CallContinuously(timeframe, period, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1823,7 +1792,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallPeriodically(double timeframe, double period, System.Action action, Segment segment, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._CallContinuously(timeframe, period, action, onDone), segment);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._CallContinuously(timeframe, period, action, onDone), segment);
         }
 
         /// <summary>
@@ -1837,7 +1806,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallPeriodicallyOnInstance(double timeframe, double period, System.Action action, Segment segment, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_CallContinuously(timeframe, period, action, onDone), segment);
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(null, _CallContinuously(timeframe, period, action, onDone), segment);
         }
 
         /// <summary>
@@ -1849,7 +1818,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallContinuously(double timeframe, System.Action action, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._CallContinuously(timeframe, 0f, action, onDone), Segment.Process);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._CallContinuously(timeframe, 0f, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1861,7 +1830,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallContinuouslyOnInstance(double timeframe, System.Action action, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_CallContinuously(timeframe, 0f, action, onDone), Segment.Process);
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(null, _CallContinuously(timeframe, 0f, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1874,7 +1843,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public static CoroutineHandle CallContinuously(double timeframe, System.Action action, Segment timing, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutine(Instance._CallContinuously(timeframe, 0f, action, onDone), timing);
+            return action == null ? new CoroutineHandle() : RunCoroutine(null, Instance._CallContinuously(timeframe, 0f, action, onDone), timing);
         }
 
         /// <summary>
@@ -1887,7 +1856,7 @@ namespace MEC
         /// <returns>The handle to the coroutine that is started by this function.</returns>
         public CoroutineHandle CallContinuouslyOnInstance(double timeframe, System.Action action, Segment timing, System.Action onDone = null)
         {
-            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(_CallContinuously(timeframe, 0f, action, onDone), timing);
+            return action == null ? new CoroutineHandle() : RunCoroutineOnInstance(null, _CallContinuously(timeframe, 0f, action, onDone), timing);
         }
 
         private IEnumerator<double> _CallContinuously(double timeframe, double period, System.Action action, System.Action onDone)
@@ -1917,7 +1886,7 @@ namespace MEC
             (T reference, double timeframe, double period, System.Action<T> action, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutine(Instance._CallContinuously(reference, timeframe, period, action, onDone), Segment.Process);
+                RunCoroutine(null, Instance._CallContinuously(reference, timeframe, period, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1933,7 +1902,7 @@ namespace MEC
             (T reference, double timeframe, double period, System.Action<T> action, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutineOnInstance(_CallContinuously(reference, timeframe, period, action, onDone), Segment.Process);
+                RunCoroutineOnInstance(null, _CallContinuously(reference, timeframe, period, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1950,7 +1919,7 @@ namespace MEC
             Segment timing, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutine(Instance._CallContinuously(reference, timeframe, period, action, onDone), timing);
+                RunCoroutine(null, Instance._CallContinuously(reference, timeframe, period, action, onDone), timing);
         }
 
         /// <summary>
@@ -1967,7 +1936,7 @@ namespace MEC
             Segment timing, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutineOnInstance(_CallContinuously(reference, timeframe, period, action, onDone), timing);
+                RunCoroutineOnInstance(null, _CallContinuously(reference, timeframe, period, action, onDone), timing);
         }
 
         /// <summary>
@@ -1981,7 +1950,7 @@ namespace MEC
         public static CoroutineHandle CallContinuously<T>(T reference, double timeframe, System.Action<T> action, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutine(Instance._CallContinuously(reference, timeframe, 0f, action, onDone), Segment.Process);
+                RunCoroutine(null, Instance._CallContinuously(reference, timeframe, 0f, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -1995,7 +1964,7 @@ namespace MEC
         public CoroutineHandle CallContinuouslyOnInstance<T>(T reference, double timeframe, System.Action<T> action, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutineOnInstance(_CallContinuously(reference, timeframe, 0f, action, onDone), Segment.Process);
+                RunCoroutineOnInstance(null, _CallContinuously(reference, timeframe, 0f, action, onDone), Segment.Process);
         }
 
         /// <summary>
@@ -2011,7 +1980,7 @@ namespace MEC
             Segment timing, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutine(Instance._CallContinuously(reference, timeframe, 0f, action, onDone), timing);
+                RunCoroutine(null, Instance._CallContinuously(reference, timeframe, 0f, action, onDone), timing);
         }
 
         /// <summary>
@@ -2027,7 +1996,7 @@ namespace MEC
             Segment timing, System.Action<T> onDone = null)
         {
             return action == null ? new CoroutineHandle() :
-                RunCoroutineOnInstance(_CallContinuously(reference, timeframe, 0f, action, onDone), timing);
+                RunCoroutineOnInstance(null, _CallContinuously(reference, timeframe, 0f, action, onDone), timing);
         }
 
         private IEnumerator<double> _CallContinuously<T>(T reference, double timeframe, double period,
@@ -2165,95 +2134,133 @@ namespace MEC
         {
             get { return Key != 0; }
         }
-    }
-
-    public static class MECExtensionMethods1
-    {
-        /// <summary>
-        /// Run a new coroutine in the Process segment.
-        /// </summary>
-        /// <param name="coroutine">The new coroutine's handle.</param>
-        /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(this IEnumerator<double> coroutine)
-        {
-            return Timing.RunCoroutine(coroutine);
-        }
 
         /// <summary>
-        /// Run a new coroutine in the Process segment.
+        /// Bind the node to automatic cancel, pause and destroy the coroutine.
+        /// Pauses the coroutine according node ProcessMode rules.
         /// </summary>
-        /// <param name="coroutine">The new coroutine's handle.</param>
-        /// <param name="tag">An optional tag to attach to the coroutine which can later be used to identify this coroutine.</param>
-        /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(this IEnumerator<double> coroutine, string tag)
-        {
-            return Timing.RunCoroutine(coroutine, tag);
+        /// <param name="coroutine">The coroutine handle to act upon.</param>
+        /// <param name="node">The Node to bind.</param>
+        /// <returns>The modified coroutine handle.</returns>
+        public static IEnumerator<double> BindNode(this IEnumerator<double> coroutine, Node node)
+        { 
+            while (IsNodeAlive(node)) {
+
+                if(node.CanProcess()) {
+                    if(coroutine.MoveNext()) yield return coroutine.Current;
+                    else break;
+                }
+                else yield return Timing.WaitForOneFrame;
+            } 
         }
 
-        /// <summary>
-        /// Run a new coroutine.
-        /// </summary>
-        /// <param name="coroutine">The new coroutine's handle.</param>
-        /// <param name="segment">The segment that the coroutine should run in.</param>
-        /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(this IEnumerator<double> coroutine, Segment segment)
+        private static bool IsCoroutineRunning(CoroutineHandle handle)
         {
-            return Timing.RunCoroutine(coroutine, segment);
+            return ActiveInstances[handle.Key] != null ? GetInstance(handle.Key).IsCoroutineRunningOnInstance(handle) : false;
         }
 
-        /// <summary>
-        /// Run a new coroutine.
-        /// </summary>
-        /// <param name="coroutine">The new coroutine's handle.</param>
-        /// <param name="segment">The segment that the coroutine should run in.</param>
-        /// <param name="tag">An optional tag to attach to the coroutine which can later be used to identify this coroutine.</param>
-        /// <returns>The coroutine's handle, which can be used for Wait and Kill operations.</returns>
-        public static CoroutineHandle RunCoroutine(this IEnumerator<double> coroutine, Segment segment, string tag)
+        private bool IsCoroutineRunningOnInstance(CoroutineHandle handle)
         {
-            return Timing.RunCoroutine(coroutine, segment, tag);
+            return _handleToIndex.ContainsKey(handle) && !CoindexIsNull(_handleToIndex[handle]) ? true : false;
         }
-    }
-}
 
-public static class MECExtensionMethods2
-{
-    /// <summary>
-    /// Cancels this coroutine when the supplied game object is destroyed or made inactive.
-    /// </summary>
-    /// <param name="coroutine">The coroutine handle to act upon.</param>
-    /// <param name="node">The Node to test.</param>
-    /// <returns>The modified coroutine handle.</returns>
-    public static IEnumerator<double> CancelWith(this IEnumerator<double> coroutine, Node node)
-    {
-        while (MEC.Timing.MainThread != System.Threading.Thread.CurrentThread || (IsNodeAlive(node) && coroutine.MoveNext()))
-            yield return coroutine.Current;
-    }
+        private static IEnumerator<double> WaitAllCo(CoroutineHandle[] handleList) {
 
-    /// <summary>
-    /// Cancels this coroutine when the supplied game objects are destroyed or made inactive.
-    /// </summary>
-    /// <param name="coroutine">The coroutine handle to act upon.</param>
-    /// <param name="node1">The first Node to test.</param>
-    /// <param name="node2">The second Node to test</param>
-    /// <returns>The modified coroutine handle.</returns>
-    public static IEnumerator<double> CancelWith(this IEnumerator<double> coroutine, Node node1, Node node2)
-    {
-        while (MEC.Timing.MainThread != System.Threading.Thread.CurrentThread || (IsNodeAlive(node1) && IsNodeAlive(node2) && coroutine.MoveNext()))
-            yield return coroutine.Current;
-    }
+            int i = 0;
 
-    /// <summary>
-    /// Cancels this coroutine when the supplied game objects are destroyed or made inactive.
-    /// </summary>
-    /// <param name="coroutine">The coroutine handle to act upon.</param>
-    /// <param name="node1">The first Node to test.</param>
-    /// <param name="node2">The second Node to test</param>
-    /// <param name="node3">The third Node to test.</param>
-    /// <returns>The modified coroutine handle.</returns>
-    public static IEnumerator<double> CancelWith(this IEnumerator<double> coroutine,
-        Node node1, Node node2, Node node3)
-    {
-        while (MEC.Timing.MainThread != System.Threading.Thread.CurrentThread || (IsNodeAlive(node1) && IsNodeAlive(node2) && IsNodeAlive(node3) && coroutine.MoveNext()))
-            yield return coroutine.Current;
+            while(i < handleList.Length) {
+                if(Timing.IsCoroutineRunning(handleList[i])) {
+                    yield return MEC.Timing.WaitForOneFrame;
+                }
+                else i++;
+            }
+        }       
+
+        private static IEnumerator<double> WaitAnyCo(CoroutineHandle[] handleList) {    
+
+            for(;;) {
+
+                bool end = false;
+
+                foreach(var h in handleList) {
+                    if(!Timing.IsCoroutineRunning(h)) {
+                        end = true;
+                        break;
+                    }
+                }
+
+                if(end) break;
+
+                yield return MEC.Timing.WaitForOneFrame;
+            }
+
+            foreach(var h in handleList) {
+                Timing.KillCoroutine(h);
+            }
+        }
+
+        public static double WaitUntilDone(Node cancelWithNode, IEnumerator<double> coroutine) {
+            return WaitUntilDone(Timing.RunCoroutine(cancelWithNode, coroutine));              
+        }
+
+        public static double WaitUntilDone(Node cancelWithNode, CoroutineHandle[] handleList) {
+            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAllCo(handleList)));
+        }
+
+        public static double WaitUntilDone(Node cancelWithNode, params IEnumerator<double>[] coroutineList) {
+
+            var handleList = new CoroutineHandle[coroutineList.Length];
+
+            for(int i = 0; i < coroutineList.Length; i++) {
+                handleList[i] = Timing.RunCoroutine(cancelWithNode, coroutineList[i]);
+            }
+
+            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAllCo(handleList)));
+        }        
+
+        public static double WaitUntilAnyDone(Node cancelWithNode, params IEnumerator<double>[] coroutineList) {
+
+            var handleList = new CoroutineHandle[coroutineList.Length];
+
+            for(int i = 0; i < coroutineList.Length; i++) {
+                handleList[i] = Timing.RunCoroutine(cancelWithNode, coroutineList[i]);
+            }
+
+            return Timing.WaitUntilAnyDone(cancelWithNode, handleList);
+        }
+
+        public static double WaitUntilAnyDone(Node cancelWithNode, CoroutineHandle[] handleList) {
+            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAnyCo(handleList)));
+        }
+
+        private static IEnumerator<double> WaitUntilCo(Func<bool> condition) {
+            
+            for(;;){
+                if(condition()) break;
+                yield return WaitForOneFrame;
+            }
+        }
+
+        public static double WaitUntil(Node cancelWithNode, Func<bool> condition) {
+            if(cancelWithNode != null) return Timing.WaitUntilDone(cancelWithNode, WaitUntilCo(condition).BindNode(cancelWithNode));
+            else return Timing.WaitUntilDone(null, WaitUntilCo(condition));
+        }
+
+        private static IEnumerator<double> WaitWhileCo(Func<bool> condition) {
+            
+            for(;;){
+                if(!condition()) break;
+                yield return WaitForOneFrame;
+            }
+        }
+
+        public static double WaitWhile(Node cancelWithNode, Func<bool> condition) {
+            if(cancelWithNode != null) return Timing.WaitUntilDone(cancelWithNode, WaitWhileCo(condition).BindNode(cancelWithNode));
+            else return Timing.WaitUntilDone(null, WaitWhileCo(condition));
+        }
+
+        public static IEnumerator<double> WaitForSecondsCo(double seconds) {
+            yield return Timing.WaitForSeconds(seconds);
+        }
     }
 }
