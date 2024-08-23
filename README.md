@@ -2,7 +2,6 @@
 This fork modifies some calls from the original library and adds fundamental functionalities for the use of coroutines. The original repository can be accessed at <a href="https://github.com/WeaverDev/More-Effective-Godot-Coroutines">https://github.com/WeaverDev/More-Effective-Godot-Coroutines</a>.
 </p>
 
-
 <h1 align="center"> More Effective Godot Coroutines (C#) </h1> <br>
 <p align="center">
     <img alt="GDMEC Icon" title="GDMEC" src="https://github.com/WeaverDev/More-Effective-Godot-Coroutines/assets/22682921/52ce5162-872c-4f49-b5db-ee1336cddad3" width="350">
@@ -22,9 +21,24 @@ MEC provides Unity-style IEnumerator coroutines with zero per-frame garbage gene
 Original source by Teal Rogers at [Trinary Software](http://trinary.tech/ "Trinary Software").
 
 ## Installation
-1. Download the latest commit or the stable Release version.
-2. Place the `addons` folder into your project root.
-3. Build the project solution under `MSBuild > Build > Build Project`
+
+1. Include the GDAutoLoad dependency in the project.
+
+```
+dotnet tool install --global Paket
+
+paket init
+
+add in paket.dependencies
+
+git https://github.com/gracioni/GDAutoLoad.git v1.0.0
+
+run: paket update
+
+```
+2. Download the latest commit or the stable Release version.
+3. Add the source files to the project tree.
+4. Build the project solution under `MSBuild > Build > Build Project`
 
 ## Key Features
 This is a non-exhaustive list, check the [original documentation](http://trinary.tech/category/mec/free/ "original documentation") for a more comprehensive overview. Usage is largely unchanged, aside from changes to the naming convention.
@@ -67,12 +81,9 @@ IEnumerator<double> MyCoroutine(Node node)
 
 ### RunCoroutine
 ```cs
-Timing.RunCoroutine(null, MyCoroutine(null));
-```
-Because coroutines do not by default live on the node that started them, they will keep going after the node is freed. By using CancelWith, coroutines can be automatically cancelled when an object they depend on is lost.
-```cs
 Timing.RunCoroutine(myNode, MyCoroutine(myNode));
 ```
+Passing null as node parameter, the coroutine will have a lifespan independent of any node.
 
 ### Update Segments
 When starting a coroutine, you can specify the time segment in which it runs.
@@ -121,4 +132,4 @@ If you spot a bug while using this, please create an [Issue](https://github.com/
 
 [MIT License](LICENSE)
 
-Copyright (c) 2023-present, Teal Rogers, Isar Arason (WeaverDev)
+Copyright (c) 2023-present, Teal Rogers, Isar Arason (WeaverDev), Geraldo Racioni Neto (gracioni)
