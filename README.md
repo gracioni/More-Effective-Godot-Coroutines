@@ -22,7 +22,7 @@ Original source by Teal Rogers at [Trinary Software](http://trinary.tech/ "Trina
 
 ## Installation
 
-1. Include the GDAutoLoad dependency in the project.
+1. Include the GDAutoLoad dependency and MEC in the project.
 
 ```
 dotnet tool install --global Paket
@@ -32,13 +32,12 @@ paket init
 add in paket.dependencies
 
 git https://github.com/gracioni/GDAutoLoad.git v1.0.0
+git https://github.com/gracioni/More-Effective-Godot-Coroutines.git v1.0.0
 
 run: paket update
 
 ```
-2. Download the latest commit or the stable Release version.
-3. Add the source files to the project tree.
-4. Build the project solution under `MSBuild > Build > Build Project`
+2. Build the project solution under `MSBuild > Build > Build Project`
 
 ## Key Features
 This is a non-exhaustive list, check the [original documentation](http://trinary.tech/category/mec/free/ "original documentation") for a more comprehensive overview. Usage is largely unchanged, aside from changes to the naming convention.
