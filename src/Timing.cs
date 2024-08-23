@@ -447,6 +447,16 @@ namespace MEC
             DeferredProcessCoroutines = _nextDeferredProcessProcessSlot = inner.i;
         }
 
+        private bool IsCoroutineRunningOnInstance(CoroutineHandle handle)
+        {
+            return _handleToIndex.ContainsKey(handle) && !CoindexIsNull(_handleToIndex[handle]) ? true : false;
+        }
+
+        private static bool IsCoroutineRunning(CoroutineHandle handle)
+        {
+            return ActiveInstances[handle.Key] != null ? GetInstance(handle.Key).IsCoroutineRunningOnInstance(handle) : false;
+        }
+
         /// <summary>
         /// Run a new coroutine in the Process segment.
         /// </summary>
@@ -1486,6 +1496,105 @@ namespace MEC
             return WaitForOneFrame;
         }
 
+        private static IEnumerator<double> WaitAllCo(CoroutineHandle[] handleList) {
+
+            int i = 0;
+
+            while(i < handleList.Length) {
+                if(Timing.IsCoroutineRunning(handleList[i])) {
+                    yield return MEC.Timing.WaitForOneFrame;
+                }
+                else i++;
+            }
+        }       
+
+        private static IEnumerator<double> WaitAnyCo(CoroutineHandle[] handleList) {    
+
+            for(;;) {
+
+                bool end = false;
+
+                foreach(var h in handleList) {
+                    if(!Timing.IsCoroutineRunning(h)) {
+                        end = true;
+                        break;
+                    }
+                }
+
+                if(end) break;
+
+                yield return MEC.Timing.WaitForOneFrame;
+            }
+
+            foreach(var h in handleList) {
+                Timing.KillCoroutine(h);
+            }
+        }
+
+        public static double WaitUntilDone(Node cancelWithNode, IEnumerator<double> coroutine) {
+            return WaitUntilDone(Timing.RunCoroutine(cancelWithNode, coroutine));              
+        }
+
+        public static double WaitUntilDone(Node cancelWithNode, CoroutineHandle[] handleList) {
+            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAllCo(handleList)));
+        }
+
+        public static double WaitUntilDone(Node cancelWithNode, params IEnumerator<double>[] coroutineList) {
+
+            var handleList = new CoroutineHandle[coroutineList.Length];
+
+            for(int i = 0; i < coroutineList.Length; i++) {
+                handleList[i] = Timing.RunCoroutine(cancelWithNode, coroutineList[i]);
+            }
+
+            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAllCo(handleList)));
+        }        
+
+        public static double WaitUntilAnyDone(Node cancelWithNode, params IEnumerator<double>[] coroutineList) {
+
+            var handleList = new CoroutineHandle[coroutineList.Length];
+
+            for(int i = 0; i < coroutineList.Length; i++) {
+                handleList[i] = Timing.RunCoroutine(cancelWithNode, coroutineList[i]);
+            }
+
+            return Timing.WaitUntilAnyDone(cancelWithNode, handleList);
+        }
+
+        public static double WaitUntilAnyDone(Node cancelWithNode, CoroutineHandle[] handleList) {
+            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAnyCo(handleList)));
+        }
+
+        private static IEnumerator<double> WaitUntilCo(Func<bool> condition) {
+            
+            for(;;){
+                if(condition()) break;
+                yield return WaitForOneFrame;
+            }
+        }
+
+        public static double WaitUntil(Node cancelWithNode, Func<bool> condition) {
+            if(cancelWithNode != null) return Timing.WaitUntilDone(cancelWithNode, WaitUntilCo(condition).BindNode(cancelWithNode));
+            else return Timing.WaitUntilDone(null, WaitUntilCo(condition));
+        }
+
+        private static IEnumerator<double> WaitWhileCo(Func<bool> condition) {
+            
+            for(;;){
+                if(!condition()) break;
+                yield return WaitForOneFrame;
+            }
+        }
+
+        public static double WaitWhile(Node cancelWithNode, Func<bool> condition) {
+            if(cancelWithNode != null) return Timing.WaitUntilDone(cancelWithNode, WaitWhileCo(condition).BindNode(cancelWithNode));
+            else return Timing.WaitUntilDone(null, WaitWhileCo(condition));
+        }
+
+        public static IEnumerator<double> WaitForSecondsCo(double seconds) {
+            yield return Timing.WaitForSeconds(seconds);
+        }
+
         private IEnumerator<double> _StartWhenDone(CoroutineHandle handle, IEnumerator<double> proc)
         {
             if (!_waitingTriggers.ContainsKey(handle)) yield break;
@@ -2053,7 +2162,9 @@ namespace MEC
             public override int GetHashCode()
             {
                 return (((int)seg - 2) * (int.MaxValue / 3)) + i;
-            }
+            }          
+
+            
         }
     }
 
@@ -2133,134 +2244,30 @@ namespace MEC
         public bool IsValid
         {
             get { return Key != 0; }
-        }
-
-        /// <summary>
-        /// Bind the node to automatic cancel, pause and destroy the coroutine.
-        /// Pauses the coroutine according node ProcessMode rules.
-        /// </summary>
-        /// <param name="coroutine">The coroutine handle to act upon.</param>
-        /// <param name="node">The Node to bind.</param>
-        /// <returns>The modified coroutine handle.</returns>
-        public static IEnumerator<double> BindNode(this IEnumerator<double> coroutine, Node node)
-        { 
-            while (IsNodeAlive(node)) {
-
-                if(node.CanProcess()) {
-                    if(coroutine.MoveNext()) yield return coroutine.Current;
-                    else break;
-                }
-                else yield return Timing.WaitForOneFrame;
-            } 
-        }
-
-        private static bool IsCoroutineRunning(CoroutineHandle handle)
-        {
-            return ActiveInstances[handle.Key] != null ? GetInstance(handle.Key).IsCoroutineRunningOnInstance(handle) : false;
-        }
-
-        private bool IsCoroutineRunningOnInstance(CoroutineHandle handle)
-        {
-            return _handleToIndex.ContainsKey(handle) && !CoindexIsNull(_handleToIndex[handle]) ? true : false;
-        }
-
-        private static IEnumerator<double> WaitAllCo(CoroutineHandle[] handleList) {
-
-            int i = 0;
-
-            while(i < handleList.Length) {
-                if(Timing.IsCoroutineRunning(handleList[i])) {
-                    yield return MEC.Timing.WaitForOneFrame;
-                }
-                else i++;
-            }
-        }       
-
-        private static IEnumerator<double> WaitAnyCo(CoroutineHandle[] handleList) {    
-
-            for(;;) {
-
-                bool end = false;
-
-                foreach(var h in handleList) {
-                    if(!Timing.IsCoroutineRunning(h)) {
-                        end = true;
-                        break;
-                    }
-                }
-
-                if(end) break;
-
-                yield return MEC.Timing.WaitForOneFrame;
-            }
-
-            foreach(var h in handleList) {
-                Timing.KillCoroutine(h);
-            }
-        }
-
-        public static double WaitUntilDone(Node cancelWithNode, IEnumerator<double> coroutine) {
-            return WaitUntilDone(Timing.RunCoroutine(cancelWithNode, coroutine));              
-        }
-
-        public static double WaitUntilDone(Node cancelWithNode, CoroutineHandle[] handleList) {
-            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAllCo(handleList)));
-        }
-
-        public static double WaitUntilDone(Node cancelWithNode, params IEnumerator<double>[] coroutineList) {
-
-            var handleList = new CoroutineHandle[coroutineList.Length];
-
-            for(int i = 0; i < coroutineList.Length; i++) {
-                handleList[i] = Timing.RunCoroutine(cancelWithNode, coroutineList[i]);
-            }
-
-            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAllCo(handleList)));
         }        
 
-        public static double WaitUntilAnyDone(Node cancelWithNode, params IEnumerator<double>[] coroutineList) {
+        
+    }
+}
 
-            var handleList = new CoroutineHandle[coroutineList.Length];
+public static class MECExtensionMethods
+{
+    /// <summary>
+    /// Bind the node to automatic cancel, pause and destroy the coroutine.
+    /// Pauses the coroutine according node ProcessMode rules.
+    /// </summary>
+    /// <param name="coroutine">The coroutine handle to act upon.</param>
+    /// <param name="node">The Node to bind.</param>
+    /// <returns>The modified coroutine handle.</returns>
+    public static IEnumerator<double> BindNode(this IEnumerator<double> coroutine, Node node)
+    { 
+        while (IsNodeAlive(node)) {
 
-            for(int i = 0; i < coroutineList.Length; i++) {
-                handleList[i] = Timing.RunCoroutine(cancelWithNode, coroutineList[i]);
+            if(node.CanProcess()) {
+                if(coroutine.MoveNext()) yield return coroutine.Current;
+                else break;
             }
-
-            return Timing.WaitUntilAnyDone(cancelWithNode, handleList);
-        }
-
-        public static double WaitUntilAnyDone(Node cancelWithNode, CoroutineHandle[] handleList) {
-            return Timing.WaitUntilDone(Timing.RunCoroutine(cancelWithNode, WaitAnyCo(handleList)));
-        }
-
-        private static IEnumerator<double> WaitUntilCo(Func<bool> condition) {
-            
-            for(;;){
-                if(condition()) break;
-                yield return WaitForOneFrame;
-            }
-        }
-
-        public static double WaitUntil(Node cancelWithNode, Func<bool> condition) {
-            if(cancelWithNode != null) return Timing.WaitUntilDone(cancelWithNode, WaitUntilCo(condition).BindNode(cancelWithNode));
-            else return Timing.WaitUntilDone(null, WaitUntilCo(condition));
-        }
-
-        private static IEnumerator<double> WaitWhileCo(Func<bool> condition) {
-            
-            for(;;){
-                if(!condition()) break;
-                yield return WaitForOneFrame;
-            }
-        }
-
-        public static double WaitWhile(Node cancelWithNode, Func<bool> condition) {
-            if(cancelWithNode != null) return Timing.WaitUntilDone(cancelWithNode, WaitWhileCo(condition).BindNode(cancelWithNode));
-            else return Timing.WaitUntilDone(null, WaitWhileCo(condition));
-        }
-
-        public static IEnumerator<double> WaitForSecondsCo(double seconds) {
-            yield return Timing.WaitForSeconds(seconds);
-        }
+            else yield return Timing.WaitForOneFrame;
+        } 
     }
 }
