@@ -47,7 +47,10 @@ This is a non-exhaustive list, check the [original documentation](http://trinary
 MEC has the following functions to yield on.
 - `Timing.WaitForOneFrame` - Yields for one frame
 - `Timing.WaitForSeconds(seconds)` - Yields for the given number of seconds
-- `Timing.WaitUntilDone(anotherCoroutineHandle)` - Yields until the passed coroutine has ended
+- `Timing.WaitUntilDone(node, IEnumerator<double>... coroutine)` - Yields until all the passed coroutine have ended
+- `WaitUntilAnyDone(node, sound.AsCoroutine(), IEnumerator<double>... coroutine))` - Yields until any the passed coroutine have ended
+- `WaitWhile(node, condition)` - Yields while condition
+- `WaitUntil(node, condition);` - Yields until condition
 ```cs
 IEnumerator<double> AnotherCoroutine()
 {
